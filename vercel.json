@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "https://sentinel-api-production-9c76.up.railway.app/$1" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Edge-Proxy", "value": "pauseapi-vercel" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "sentinel-api-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vercel edge proxy for api.pauseapi.app -> Railway. TLS terminates at edge near user; reverse-proxies to Railway origin."
+}
