@@ -26,9 +26,16 @@ client → Vercel edge ┼── Railway us-east2  (replica) → Postgres read r
 ```
 
 - Each region runs an identical FastAPI app
-- All writes (`POST /v1/approvals`, `POST /decision`, etc.) routed to us-west2
-- Reads (`GET /v1/approvals*`, `GET /audit-events`, `/wait`) served locally
-- Vercel rewrites split by HTTP method or path
+- All writes (`POST /v1/approvals`, `POST /v1/decisions`, etc.) routed to us-west2
+- Reads (`GET /v1/approvals*`, `GET /v1/audit-events`, `/v1/approvals/{id}/wait`)
+  served locally
+- Vercel rewrites split by **path** only. **They cannot route by HTTP method** —
+  a `vercel.json` rewrite `source` matches the pathname (and optionally `has`/
+  `missing` conditions on headers/cookies/query), never the request method. So a
+  single catch-all rewrite can't send `POST /v1/approvals` to the primary while
+  serving `GET /v1/approvals` from a replica. Method-aware read/write splitting
+  must happen **at the origin** (the FastAPI app decides per-method which DB to
+  hit) or via a separate path namespace per region — not in the edge proxy.
 
 Effort: ~1 day. Postgres logical replication on Railway is Pro feature; cheaper
 on a separate provider (Neon, Supabase) that natively supports read replicas.
@@ -71,6 +78,20 @@ cheap when you actually have the revenue to justify them.
 
 The fact that this proxy exists means:
 - Customers point at `api.pauseapi.app` (stable forever)
-- You can swap the Railway origin to a load balancer later without breaking clients
-- You can A/B route traffic via Vercel rewrites (`/v1/approvals → eu-write.railway.app`)
+- You can swap the origin behind `origin.pauseapi.app` (load balancer, new Railway
+  host, etc.) later without breaking clients — it's a DNS change, not a code change
+- You can A/B route traffic by **path** via Vercel rewrites
+  (e.g. `/v1/approvals/* → eu-write.railway.app`); method-based splitting is not
+  possible at the rewrite layer (see Topology A above)
 - TLS terminates globally already
+
+### What the proxy forwards transparently
+
+The catch-all rewrite is a pass-through, so the API's existing semantics work
+unchanged through the proxy with no extra config:
+
+- **Cursor pagination** — the `cursor` query parameter and `next`/`prev` cursors
+  in responses are forwarded verbatim; clients page exactly as they would against
+  the origin.
+- **`Idempotency-Key` header** — forwarded to the origin untouched, so idempotent
+  `POST /v1/*` writes dedupe correctly end-to-end.
